@@ -16,7 +16,7 @@
 
 ## Présentation
 
-**Pennylane MCP Server** expose l'API Pennylane V2 sous forme de **28+ outils MCP** utilisables par n'importe quel LLM compatible (Claude, GPT, Mistral, etc.).
+**Pennylane MCP Server** expose l'API Pennylane V2 sous forme de **87 outils MCP** utilisables par n'importe quel LLM compatible (Claude, GPT, Mistral, etc.).
 
 Il permet aux experts-comptables d'automatiser leurs opérations quotidiennes via un assistant IA : consultation du plan comptable, saisie d'écritures, lettrage, balance générale, gestion des factures, devis, et bien plus.
 
@@ -323,6 +323,19 @@ Une fois le serveur connecté à votre LLM, vous pouvez interagir en langage nat
 | `pennylane_list_fiscal_years` | Exercices fiscaux et leur statut |
 | `pennylane_create_fec_export` | Exporter le FEC (Fichier des Écritures Comptables) |
 | `pennylane_create_agl_export` | Exporter le Grand Livre Analytique |
+
+### Suivi des modifications (Changelogs)
+
+| Outil | Description |
+|-------|-------------|
+| `pennylane_changelog_customers` | Historique des modifications clients |
+| `pennylane_changelog_suppliers` | Historique des modifications fournisseurs |
+| `pennylane_changelog_products` | Historique des modifications produits |
+| `pennylane_changelog_customer_invoices` | Historique des modifications factures clients |
+| `pennylane_changelog_supplier_invoices` | Historique des modifications factures fournisseurs |
+| `pennylane_changelog_quotes` | Historique des modifications devis |
+| `pennylane_changelog_entry_lines` | Historique des modifications lignes d'écriture |
+| `pennylane_changelog_transactions` | Historique des modifications transactions bancaires |
 
 ### Utilitaires
 
