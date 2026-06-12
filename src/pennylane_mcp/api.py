@@ -13,11 +13,43 @@ Rétrocompatibilité totale : tous les appels existants sans
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 import httpx
 
 from .constants import API_BASE_URL
+
+# ─── Validation des endpoints ────────────────────────────────────────────────
+
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _validate_endpoint(endpoint: str) -> str:
+    """Valide qu'un endpoint est un chemin relatif sûr vers l'API Pennylane.
+
+    Empêche toute fuite du token Bearer vers un hôte tiers : un endpoint
+    absolu (``https://...``), protocole-relatif (``//evil.com``) ou contenant
+    des caractères de contrôle (CRLF) serait sinon transmis tel quel à
+    ``httpx``, qui le résoudrait comme une URL absolue (remplaçant
+    ``base_url``) tout en conservant l'en-tête ``Authorization``.
+
+    Raises:
+        ValueError: Si l'endpoint n'est pas un chemin relatif valide.
+    """
+    if not endpoint:
+        raise ValueError("Endpoint invalide : chaîne vide.")
+    if _CONTROL_CHARS_RE.search(endpoint):
+        raise ValueError("Endpoint invalide : caractères de contrôle interdits.")
+    if "\\" in endpoint:
+        raise ValueError("Endpoint invalide : antislash interdit.")
+    if "://" in endpoint:
+        raise ValueError("Endpoint invalide : schéma d'URL interdit.")
+    if endpoint.startswith("//"):
+        raise ValueError("Endpoint invalide : URL protocole-relative interdite.")
+    if not endpoint.startswith("/"):
+        raise ValueError("Endpoint invalide : doit commencer par '/'.")
+    return endpoint
 
 # ─── Legacy : client unique (rétrocompatibilité) ─────────────────────────────
 
@@ -92,6 +124,7 @@ async def api_get(
         dossier_slug: Slug du dossier cible (optionnel, défaut: dossier actif).
     """
     try:
+        _validate_endpoint(endpoint)
         client = await _resolve_client(dossier_slug)
         resp = await client.get(endpoint, params=params)
         resp.raise_for_status()
@@ -116,6 +149,7 @@ async def api_post(
 ) -> Any:
     """POST vers l'API Pennylane."""
     try:
+        _validate_endpoint(endpoint)
         client = await _resolve_client(dossier_slug)
         resp = await client.post(endpoint, json=data)
         resp.raise_for_status()
@@ -139,6 +173,7 @@ async def api_put(
 ) -> Any:
     """PUT vers l'API Pennylane."""
     try:
+        _validate_endpoint(endpoint)
         client = await _resolve_client(dossier_slug)
         resp = await client.put(endpoint, json=data)
         resp.raise_for_status()
@@ -162,6 +197,7 @@ async def api_delete(
 ) -> Any:
     """DELETE vers l'API Pennylane."""
     try:
+        _validate_endpoint(endpoint)
         client = await _resolve_client(dossier_slug)
         resp = await client.request("DELETE", endpoint, json=data)
         resp.raise_for_status()

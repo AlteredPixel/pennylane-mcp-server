@@ -125,9 +125,33 @@ Créez un fichier `dossiers.json` à la racine du projet :
 }
 ```
 
-> ⚠️ **Ce fichier contient des tokens sensibles.** Il est automatiquement ignoré par Git (via `.gitignore`). Ne le partagez jamais.
+> ⚠️ **Ce fichier contient des tokens sensibles.** Il est automatiquement ignoré par Git (via `.gitignore`). Ne le partagez jamais. Exécutez `chmod 600 dossiers.json` pour le réserver à votre utilisateur (le serveur affiche un avertissement au démarrage si les permissions sont trop ouvertes).
 
 Vous pouvez aussi ajouter des dossiers dynamiquement via l'outil MCP `pennylane_add_dossier` sans éditer le fichier manuellement.
+
+#### Indirection par variable d'environnement (recommandé)
+
+Plutôt que d'écrire un token en clair, vous pouvez référencer une variable
+d'environnement avec la syntaxe `${VAR}` :
+
+```json
+{
+  "version": "1.0",
+  "current_dossier": "sarl-dupont",
+  "dossiers": [
+    {
+      "slug": "sarl-dupont",
+      "name": "SARL Dupont",
+      "token": "${PENNYLANE_TOKEN_SARL_DUPONT}",
+      "notes": "Client principal"
+    }
+  ]
+}
+```
+
+Exportez ensuite `PENNYLANE_TOKEN_SARL_DUPONT=...` dans l'environnement du
+serveur. Le token réel ne sera alors jamais écrit sur disque (`dossiers.json`
+ne contient que le placeholder `${VAR}`).
 
 ### Mode 3 : Sans configuration initiale
 
@@ -139,6 +163,10 @@ Le serveur peut démarrer sans token ni fichier de configuration. Il attendra l'
 |----------|--------|-------------|
 | `PENNYLANE_API_TOKEN` | Non* | Token Bearer (mode mono-dossier) |
 | `PENNYLANE_CONFIG_PATH` | Non | Chemin vers `dossiers.json` (défaut : `./dossiers.json`) |
+| `MCP_TRANSPORT` | Non | `stdio` (défaut) ou `sse` |
+| `MCP_HOST` / `MCP_PORT` | Non | Hôte/port d'écoute en mode SSE (défaut : `127.0.0.1:8000`) |
+| `MCP_AUTH_TOKEN` | **Oui en mode SSE** | Token Bearer requis pour authentifier les clients distants. Le serveur refuse de démarrer en SSE sans cette variable. |
+| `MCP_READONLY` | Non | `true`/`1`/`yes` : n'expose que les outils de consultation (`readOnlyHint: true`) — masque création/modification/suppression/envoi. |
 
 \* Requis uniquement si pas de `dossiers.json`.
 
@@ -417,9 +445,15 @@ mcp dev src/pennylane_mcp/server.py
 ## Sécurité
 
 - Les tokens API ne sont **jamais** inclus dans le code source
-- Le fichier `dossiers.json` est exclu du dépôt Git via `.gitignore`
+- Le fichier `dossiers.json` est exclu du dépôt Git via `.gitignore`, et le serveur avertit au démarrage si ses permissions sont trop ouvertes (`chmod 600` recommandé)
+- Les tokens peuvent être stockés par indirection (`"token": "${MA_VARIABLE}"`) : le secret réel ne vit qu'en variable d'environnement, jamais sur disque
 - Les tokens sont masqués dans les retours de l'outil `list_dossiers`
 - Toutes les entrées utilisateur sont validées par Pydantic v2 (`extra="forbid"`)
+- Tous les appels API valident l'endpoint (`_validate_endpoint`) : impossible de faire fuiter le token Bearer vers un hôte tiers via un endpoint absolu ou protocole-relatif (`https://...`, `//evil.com`)
+- En mode SSE, `MCP_AUTH_TOKEN` est **obligatoire** (le serveur refuse de démarrer sans), et la comparaison du Bearer est en temps constant (`hmac.compare_digest`)
+- `MCP_READONLY=true` active un mode lecture seule : seuls les outils `readOnlyHint: true` (list/get) sont exposés, masquant création/modification/suppression
+- Recommandé : générez des tokens Pennylane avec des scopes minimaux (lecture seule si possible) pour chaque dossier
+- Installation reproductible et figée : `pip install --require-hashes -r requirements.txt`
 
 ---
 

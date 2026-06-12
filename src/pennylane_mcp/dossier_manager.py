@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ from typing import Any, Optional
 
 import httpx
 
+from .api import _validate_endpoint
 from .constants import (
     API_BASE_URL,
     DOSSIER_CONFIG_VERSION,
@@ -66,15 +68,48 @@ def mask_token(token: str) -> str:
     return f"{token[:6]}…{token[-3:]}"
 
 
+_SECRET_REF_RE = re.compile(r"^\$\{?(\w+)\}?$")
+
+
+def resolve_secret(value: str) -> str:
+    """Résout une indirection ``${VAR}`` ou ``$VAR`` depuis l'environnement.
+
+    Permet de stocker dans ``dossiers.json`` une référence vers une variable
+    d'environnement plutôt que le token en clair. Si ``value`` ne correspond
+    pas à ce motif, elle est renvoyée telle quelle (token littéral).
+
+    Raises:
+        RuntimeError: Si la variable d'environnement référencée est absente.
+    """
+    match = _SECRET_REF_RE.match(value)
+    if not match:
+        return value
+
+    var_name = match.group(1)
+    resolved = os.environ.get(var_name)
+    if resolved is None:
+        raise RuntimeError(
+            f"La variable d'environnement '{var_name}' référencée dans "
+            "dossiers.json est introuvable. Définissez-la avant de démarrer "
+            "le serveur."
+        )
+    return resolved
+
+
 def _build_client(token: str) -> httpx.AsyncClient:
-    """Crée un client httpx configuré pour l'API Pennylane."""
+    """Crée un client httpx configuré pour l'API Pennylane.
+
+    ``token`` peut être un token littéral ou une indirection ``${VAR}``
+    résolue via :func:`resolve_secret` — le secret réel ne vit alors qu'en
+    mémoire/environnement, jamais sur disque.
+    """
     return httpx.AsyncClient(
         base_url=API_BASE_URL,
         timeout=30.0,
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Bearer {resolve_secret(token)}",
             "X-Use-2026-API-Changes": "true",
         },
     )
@@ -123,6 +158,19 @@ class DossierManager:
         """Charge dossiers.json. Retourne True si trouvé et chargé."""
         if self._config_path is None or not self._config_path.exists():
             return False
+
+        try:
+            mode = self._config_path.stat().st_mode
+            if mode & 0o077:
+                print(
+                    f"⚠️  {self._config_path} est lisible par d'autres "
+                    "utilisateurs du système. Ce fichier contient des "
+                    "tokens API en clair : exécutez "
+                    f"`chmod 600 {self._config_path}`.",
+                    file=sys.stderr,
+                )
+        except OSError:
+            pass
 
         try:
             raw = self._config_path.read_text(encoding="utf-8")
@@ -334,6 +382,8 @@ class DossierManager:
             dict[slug, {"data": None, "error": "..."}]
         """
         results: dict[str, Any] = {}
+
+        _validate_endpoint(endpoint)
 
         async def _fetch(slug: str) -> None:
             try:

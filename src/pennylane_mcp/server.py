@@ -35,10 +35,14 @@ Variables d'environnement :
     MCP_TRANSPORT         — Transport : 'stdio' (défaut) ou 'sse'
     MCP_HOST              — Hôte d'écoute SSE (défaut: 127.0.0.1)
     MCP_PORT              — Port d'écoute SSE (défaut: 8000)
+    MCP_AUTH_TOKEN        — Token Bearer requis en mode SSE (obligatoire)
+    MCP_READONLY          — 'true'/'1'/'yes' : n'expose que les outils de
+                            consultation (readOnlyHint=True)
 """
 
 from __future__ import annotations
 
+import hmac
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -199,6 +203,32 @@ mcp = FastMCP(
     lifespan=lifespan,
 )
 
+
+def _is_readonly_mode() -> bool:
+    return os.environ.get("MCP_READONLY", "").strip().lower() in {"1", "true", "yes"}
+
+
+if _is_readonly_mode():
+    print(
+        f"🔒 {SERVER_NAME} v{SERVER_VERSION} — Mode lecture seule "
+        "(MCP_READONLY) : seuls les outils de consultation sont exposés.",
+        file=sys.stderr,
+    )
+    _original_tool = mcp.tool
+
+    def _readonly_tool(*args: object, **kwargs: object):
+        annotations = kwargs.get("annotations") or {}
+        if annotations.get("readOnlyHint") is True:
+            return _original_tool(*args, **kwargs)
+
+        def _noop_decorator(func):
+            return func
+
+        return _noop_decorator
+
+    mcp.tool = _readonly_tool  # type: ignore[method-assign]
+
+
 # ─── Enregistrement de tous les outils ───────────────────────────────────────
 
 me.register(mcp)
@@ -218,6 +248,18 @@ exports.register(mcp)
 billing_subscriptions.register(mcp)
 changelogs.register(mcp)
 dossiers.register(mcp)  # Outils multi-dossiers (v2.0)
+
+
+# ─── Authentification SSE ────────────────────────────────────────────────────
+
+
+def _check_sse_auth(auth_header: str, expected: str) -> bool:
+    """Vérifie le header ``Authorization`` en temps constant.
+
+    Utilise ``hmac.compare_digest`` pour éviter les attaques par mesure de
+    temps (timing attack) sur la comparaison du token.
+    """
+    return hmac.compare_digest(auth_header, expected)
 
 
 # ─── Point d'entrée ─────────────────────────────────────────────────────────
@@ -248,8 +290,16 @@ def main() -> None:
         from mcp.server.fastmcp import FastMCP
         mcp_app = mcp.sse_app()
 
-        # Token d'authentification (optionnel)
+        # Token d'authentification (obligatoire en SSE)
         auth_token = os.environ.get("MCP_AUTH_TOKEN", "")
+        if not auth_token:
+            print(
+                "❌ MCP_AUTH_TOKEN est obligatoire en mode SSE "
+                "(serveur exposé sur le réseau). Définissez cette variable "
+                "avant de démarrer.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         # Middleware reverse proxy + authentification
         class McpMiddleware:
@@ -258,13 +308,11 @@ def main() -> None:
             async def __call__(self, scope, receive, send):
                 if scope["type"] == "http":
                     headers_dict = dict(scope.get("headers", []))
-                    # Vérifier le token Bearer si configuré
-                    if auth_token:
-                        auth_header = headers_dict.get(b"authorization", b"").decode()
-                        if auth_header != f"Bearer {auth_token}":
-                            await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"text/plain")]})
-                            await send({"type": "http.response.body", "body": b"Unauthorized"})
-                            return
+                    auth_header = headers_dict.get(b"authorization", b"").decode()
+                    if not _check_sse_auth(auth_header, f"Bearer {auth_token}"):
+                        await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"text/plain")]})
+                        await send({"type": "http.response.body", "body": b"Unauthorized"})
+                        return
                     # Fix Host header pour Traefik
                     hdrs = [(k, b"localhost:8000" if k == b"host" else v) for k, v in scope.get("headers", [])]
                     scope = dict(scope, headers=hdrs)

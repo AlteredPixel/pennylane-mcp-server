@@ -171,5 +171,30 @@ Pour passer en mode plateforme : changer `mcp.run()` en `mcp.run(transport="stre
 |----------|--------|-------------|
 | `PENNYLANE_API_TOKEN` | Non* | Token Bearer API Pennylane V2 (mode mono-dossier) |
 | `PENNYLANE_CONFIG_PATH` | Non | Chemin vers dossiers.json |
+| `MCP_TRANSPORT` | Non | `stdio` (défaut) ou `sse` |
+| `MCP_HOST` / `MCP_PORT` | Non | Écoute SSE (défaut `127.0.0.1:8000`) |
+| `MCP_AUTH_TOKEN` | **Oui en SSE** | Bearer requis pour les clients distants ; le serveur refuse de démarrer en SSE sans ce token |
+| `MCP_READONLY` | Non | `true`/`1`/`yes` : n'expose que les outils `readOnlyHint: true` |
 
 \* Requis uniquement si pas de dossiers.json.
+
+## Durcissement sécurité (v2.x)
+
+- `api._validate_endpoint()` : appelé en tête de `api_get/post/put/delete` et
+  de `DossierManager.parallel_get`. Rejette tout endpoint absolu
+  (`scheme://`), protocole-relatif (`//host`), contenant CRLF/antislash, ou
+  ne commençant pas par `/`. Empêche la fuite du header `Authorization:
+  Bearer <token>` vers un hôte tiers, y compris via `pennylane_multi_dossier_query`.
+- `dossier_manager.resolve_secret()` : résout une valeur `${VAR}` depuis
+  `os.environ` au moment de construire le client httpx (`_build_client`). Le
+  token stocké dans `dossiers.json` peut donc être un placeholder ; le secret
+  réel ne vit qu'en mémoire/environnement.
+- `DossierManager.load_config()` avertit sur stderr si `dossiers.json` est
+  lisible par d'autres utilisateurs (`mode & 0o077`).
+- `server._check_sse_auth()` : comparaison du Bearer SSE via
+  `hmac.compare_digest` (anti timing-attack). `MCP_AUTH_TOKEN` est
+  obligatoire en SSE (sinon `sys.exit(1)`).
+- Mode `MCP_READONLY` : wrapper de `mcp.tool` dans `server.py` qui ignore
+  l'enregistrement de tout outil dont `annotations["readOnlyHint"]` n'est pas
+  strictement `True`.
+- Tests : `tests/test_security.py` couvre ces quatre points.

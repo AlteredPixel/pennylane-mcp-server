@@ -17,6 +17,12 @@ dependencies = [
     "uvicorn>=0.30.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]
+
 [project.scripts]
 pennylane-mcp-server = "pennylane_mcp.server:main"
 
