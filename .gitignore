@@ -21,6 +21,3 @@ env/
 .idea/
 *.swp
 *.swo
-
-# Configuration sensible (contient des tokens API)
-dossiers.json

@@ -1,10 +1,10 @@
-# Contexte Projet : Serveur MCP Pennylane pour Expert-Comptable
+# Contexte Projet : Serveur MCP Pennylane (mono-société)
 
 ## Vue d'ensemble
 
-Serveur **MCP** (Model Context Protocol) en **Python / FastMCP** connectant un LLM à l'API comptable **Pennylane V2**. Destiné aux **experts-comptables** pour automatiser leurs opérations quotidiennes via un assistant IA.
+Serveur **MCP** (Model Context Protocol) en **Python / FastMCP** connectant un LLM à l'API comptable **Pennylane V2**. Pilote **un seul dossier Pennylane** (une société), configuré via un unique token `PENNYLANE_API_TOKEN`.
 
-**v2.0** : support multi-dossiers — gestion de plusieurs dossiers comptables simultanément, requêtes parallèles, et configuration dynamique.
+**v3.0** : retrait complet du multi-dossiers — un serveur = une société = un token.
 
 ## Contexte métier : Pennylane
 
@@ -26,29 +26,24 @@ Pennylane est une plateforme de comptabilité collaborative française. Elle cen
 
 - **Comptabilité analytique** : ventilation charges/produits par catégories avec poids (somme = 1).
 
-- **Dossier comptable** : un dossier = une société/entreprise dans Pennylane. Un cabinet gère typiquement des dizaines de dossiers.
-
 ## Architecture technique
 
 ### API Pennylane V2
 
-- **Base URL** : `https://app.pennylane.com/api/external/v2`
-- **Auth** : Bearer token (un token Company API par dossier)
+- **Base URL** : `https://app.pennylane.com/api/external/v2` (codée en dur, seule destination réseau)
+- **Auth** : Bearer token (un unique token Company API)
 - **Pagination** : curseur (`cursor` + `limit` + `has_more` + `next_cursor`)
 - **Filtres** : JSON array `[{field, operator, value}]`
 - **Scopes** : permissions granulaires (`ledger_accounts:all`, `journals:readonly`, etc.)
 
-### Modes de fonctionnement
+### Mode de fonctionnement
 
-1. **Multi-dossiers** (recommandé) : fichier `dossiers.json` avec N dossiers, chacun avec son token. Pool de clients httpx, switch à la volée, requêtes parallèles.
-2. **Mono-dossier** (rétrocompatible) : variable `PENNYLANE_API_TOKEN`, crée un dossier "default" dans le manager.
-3. **Mode initial** : ni fichier ni token, le serveur démarre vide et attend l'ajout d'un dossier via outil MCP.
+Unique : le client httpx est initialisé au démarrage à partir de `PENNYLANE_API_TOKEN`. Sans ce token, le serveur refuse de démarrer.
 
-### 28 outils MCP
+### Outils MCP
 
 | Domaine | Outils | Fichier |
 |---------|--------|---------|
-| Multi-dossiers | `list_dossiers`, `current_dossier`, `switch_dossier`, `add_dossier`, `remove_dossier`, `multi_dossier_query` | `tools/dossiers.py` |
 | Connexion | `pennylane_whoami` | `tools/me.py` |
 | Comptes | `list_accounts`, `get_account`, `create_account`, `update_account` | `tools/accounts.py` |
 | Journaux | `list_journals`, `get_journal`, `create_journal` | `tools/journals.py` |
@@ -60,20 +55,20 @@ Pennylane est une plateforme de comptabilité collaborative française. Elle cen
 
 ```
 src/pennylane_mcp/
-├── server.py            — FastMCP + lifespan multi-mode (dossiers.json / PENNYLANE_API_TOKEN / vide)
-├── constants.py         — API_BASE_URL, CHARACTER_LIMIT, constantes multi-dossiers
-├── models.py            — 27+ modèles Pydantic (entrées outils + DossierConfig/Info)
-├── api.py               — Client httpx async (api_get/post/put/delete + dossier_slug optionnel + api_get_multi)
+├── server.py            — FastMCP + lifespan (init du client depuis PENNYLANE_API_TOKEN)
+├── constants.py         — API_BASE_URL, CHARACTER_LIMIT, limites
+├── models.py            — modèles Pydantic (entrées des outils)
+├── api.py               — Client httpx async (api_get/post/put/delete + _validate_endpoint)
 ├── utils.py             — truncate_if_needed, pagination_summary, to_json
-├── dossier_manager.py   — DossierManager : pool de clients, switch, CRUD dossiers, requêtes parallèles
-└── tools/               — 7 modules, chacun avec register(mcp)
-    ├── dossiers.py      — 6 outils gestion multi-dossiers
+└── tools/               — modules métier, chacun avec register(mcp)
     ├── me.py            — pennylane_whoami
-    ├── accounts.py      — 4 outils comptes
-    ├── journals.py      — 3 outils journaux
-    ├── entries.py       — 5 outils écritures
-    ├── entry_lines.py   — 7 outils lignes (lettrage, analytique)
-    └── trial_balance.py — 2 outils balance + exercices
+    ├── accounts.py      — comptes
+    ├── journals.py      — journaux
+    ├── entries.py       — écritures
+    ├── entry_lines.py   — lignes (lettrage, analytique)
+    ├── trial_balance.py — balance + exercices
+    └── …                — customers, suppliers, invoices, quotes, products,
+                            categories, exports, billing_subscriptions, changelogs
 ```
 
 ### Choix techniques
@@ -81,34 +76,12 @@ src/pennylane_mcp/
 1. **Python + FastMCP** : framework MCP officiel, décorateurs `@mcp.tool`
 2. **Pydantic v2** : validation stricte des entrées (`extra="forbid"`, contraintes `ge/le/min_length`)
 3. **httpx async** : requêtes HTTP non-bloquantes avec timeout 30s
-4. **Lifespan multi-mode** : détection auto du mode (dossiers.json → PENNYLANE_API_TOKEN → vide)
-5. **DossierManager** : singleton gérant un pool de clients httpx, un par dossier, avec masquage des tokens
-6. **Rétrocompatibilité** : `api_get/post/put/delete` acceptent un `dossier_slug` optionnel en keyword-only
-7. **Requêtes parallèles** : `api_get_multi()` et `DossierManager.parallel_get()` via `asyncio.gather()`
-8. **Erreurs en français** : messages actionnables, préfixés par le nom du dossier si applicable
-9. **Transport stdio** : intégration locale (Claude Desktop). Passable en HTTP pour la plateforme.
+4. **Client unique** : initialisé au démarrage depuis `PENNYLANE_API_TOKEN`
+5. **Sécurité endpoints** : `api._validate_endpoint` rejette toute URL absolue/protocole-relative pour empêcher la fuite du token Bearer vers un hôte tiers
+6. **Erreurs en français** : messages actionnables
+7. **Transport stdio** (défaut, local) ou **SSE** (distant, `MCP_AUTH_TOKEN` obligatoire)
 
-### Configuration multi-dossiers (dossiers.json)
-
-```json
-{
-  "version": "1.0",
-  "current_dossier": "sarl-dupont",
-  "dossiers": [
-    {
-      "slug": "sarl-dupont",
-      "name": "SARL Dupont",
-      "token": "pl_xxx...",
-      "created_at": "2025-02-10T12:00:00Z",
-      "notes": "Client principal"
-    }
-  ]
-}
-```
-
-Recherche du fichier : `PENNYLANE_CONFIG_PATH` env → `./dossiers.json` → `~/.config/pennylane-mcp/dossiers.json`.
-
-## Cas d'usage expert-comptable
+## Cas d'usage
 
 ### Travaux courants
 - Consultation / recherche dans le plan comptable
@@ -125,12 +98,6 @@ Recherche du fichier : `PENNYLANE_CONFIG_PATH` env → `./dossiers.json` → `~/
 - Mouvements d'un compte sur une période
 - Suivi créances clients non lettrées (impayés)
 - Ventilation analytique des charges
-
-### Multi-dossiers (nouveau v2.0)
-- Basculer entre dossiers clients à la volée
-- Comparer des balances entre plusieurs clients
-- Ajouter/supprimer des dossiers sans relancer le serveur
-- Requêtes parallèles pour consolider des données
 
 ## Vision : Plateforme MCP multi-serveurs
 
@@ -169,32 +136,7 @@ Pour passer en mode plateforme : changer `mcp.run()` en `mcp.run(transport="stre
 
 | Variable | Requis | Description |
 |----------|--------|-------------|
-| `PENNYLANE_API_TOKEN` | Non* | Token Bearer API Pennylane V2 (mode mono-dossier) |
-| `PENNYLANE_CONFIG_PATH` | Non | Chemin vers dossiers.json |
+| `PENNYLANE_API_TOKEN` | **Oui** | Token Bearer Company API Pennylane V2 |
 | `MCP_TRANSPORT` | Non | `stdio` (défaut) ou `sse` |
 | `MCP_HOST` / `MCP_PORT` | Non | Écoute SSE (défaut `127.0.0.1:8000`) |
-| `MCP_AUTH_TOKEN` | **Oui en SSE** | Bearer requis pour les clients distants ; le serveur refuse de démarrer en SSE sans ce token |
-| `MCP_READONLY` | Non | `true`/`1`/`yes` : n'expose que les outils `readOnlyHint: true` |
-
-\* Requis uniquement si pas de dossiers.json.
-
-## Durcissement sécurité (v2.x)
-
-- `api._validate_endpoint()` : appelé en tête de `api_get/post/put/delete` et
-  de `DossierManager.parallel_get`. Rejette tout endpoint absolu
-  (`scheme://`), protocole-relatif (`//host`), contenant CRLF/antislash, ou
-  ne commençant pas par `/`. Empêche la fuite du header `Authorization:
-  Bearer <token>` vers un hôte tiers, y compris via `pennylane_multi_dossier_query`.
-- `dossier_manager.resolve_secret()` : résout une valeur `${VAR}` depuis
-  `os.environ` au moment de construire le client httpx (`_build_client`). Le
-  token stocké dans `dossiers.json` peut donc être un placeholder ; le secret
-  réel ne vit qu'en mémoire/environnement.
-- `DossierManager.load_config()` avertit sur stderr si `dossiers.json` est
-  lisible par d'autres utilisateurs (`mode & 0o077`).
-- `server._check_sse_auth()` : comparaison du Bearer SSE via
-  `hmac.compare_digest` (anti timing-attack). `MCP_AUTH_TOKEN` est
-  obligatoire en SSE (sinon `sys.exit(1)`).
-- Mode `MCP_READONLY` : wrapper de `mcp.tool` dans `server.py` qui ignore
-  l'enregistrement de tout outil dont `annotations["readOnlyHint"]` n'est pas
-  strictement `True`.
-- Tests : `tests/test_security.py` couvre ces quatre points.
+| `MCP_AUTH_TOKEN` | En SSE | Token d'authentification, obligatoire en mode SSE |

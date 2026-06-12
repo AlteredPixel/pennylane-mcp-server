@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pennylane-mcp-server"
-version = "1.0.0"
-description = "Serveur MCP pour l'API Pennylane - Outil d'expert-comptable"
+version = "3.0.0"
+description = "Serveur MCP pour l'API Pennylane - mono-société"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.27.0",
     "pydantic>=2.0.0",
     "uvicorn>=0.30.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

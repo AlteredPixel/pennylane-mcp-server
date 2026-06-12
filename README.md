@@ -3,7 +3,7 @@
   <p align="center">
     Serveur MCP (Model Context Protocol) complet pour l'API comptable <strong>Pennylane V2</strong>
     <br />
-    Conçu pour les <strong>experts-comptables</strong> et cabinets comptables
+    Connectez la comptabilité de <strong>votre société</strong> à un assistant IA
     <br /><br />
     <a href="#installation">Installation</a> •
     <a href="#configuration">Configuration</a> •
@@ -16,20 +16,18 @@
 
 ## Présentation
 
-**Pennylane MCP Server** expose l'API Pennylane V2 sous forme de **87 outils MCP** utilisables par n'importe quel LLM compatible (Claude, GPT, Mistral, etc.).
+**Pennylane MCP Server** expose l'API Pennylane V2 sous forme de **81 outils MCP** utilisables par n'importe quel LLM compatible (Claude, GPT, Mistral, etc.).
 
-Il permet aux experts-comptables d'automatiser leurs opérations quotidiennes via un assistant IA : consultation du plan comptable, saisie d'écritures, lettrage, balance générale, gestion des factures, devis, et bien plus.
+Il permet d'automatiser les opérations comptables quotidiennes d'une société via un assistant IA : consultation du plan comptable, saisie d'écritures, lettrage, balance générale, gestion des factures, devis, et bien plus.
 
-**Support multi-dossiers** : gérez plusieurs dossiers comptables simultanément, basculez entre clients à la volée, et interrogez plusieurs dossiers en parallèle.
+> **Mono-société** : ce serveur pilote **un seul dossier Pennylane**, configuré via un unique token (`PENNYLANE_API_TOKEN`).
 
 ### Pourquoi ce projet ?
 
-Les experts-comptables passent un temps considérable sur des tâches répétitives dans Pennylane. Ce serveur MCP permet de :
+Beaucoup d'opérations dans Pennylane sont répétitives. Ce serveur MCP permet de :
 
 - **Gagner du temps** en automatisant la saisie, la consultation et le lettrage via le langage naturel
-- **Gérer un portefeuille clients** en basculant entre dossiers sans changer d'outil
 - **Fiabiliser les opérations** grâce à une validation stricte des données (Pydantic v2)
-- **Consolider les données** en interrogeant plusieurs dossiers en parallèle
 
 ### Qu'est-ce que MCP ?
 
@@ -41,7 +39,7 @@ Le [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) est un proto
 
 - **Python** >= 3.11
 - **pip** (gestionnaire de paquets Python)
-- Un ou plusieurs **tokens API Pennylane** (Company Token)
+- Un **token API Pennylane** (Company Token)
 
 ### Obtenir un token API Pennylane
 
@@ -57,7 +55,7 @@ Le [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) est un proto
    - `supplier_invoices:all` — Factures fournisseurs
    - `customer_invoices:all` — Factures clients
 
-> Répétez pour chaque dossier client si vous utilisez le mode multi-dossiers.
+> 💡 Pour un usage en **consultation seule**, générez le token avec uniquement les scopes `:readonly`.
 
 ---
 
@@ -81,13 +79,7 @@ pip install -e .
 
 ## Configuration
 
-Le serveur supporte trois modes de fonctionnement, détectés automatiquement au démarrage.
-
-### Mode 1 : Mono-dossier (le plus simple)
-
-Idéal si vous ne gérez qu'un seul dossier Pennylane.
-
-Configurez votre token via une variable d'environnement :
+Configurez votre token Pennylane via une variable d'environnement :
 
 ```bash
 export PENNYLANE_API_TOKEN="votre_token_pennylane"
@@ -100,83 +92,20 @@ cp .env.example .env
 # Éditez .env et renseignez votre token
 ```
 
-### Mode 2 : Multi-dossiers (recommandé pour les cabinets)
-
-Créez un fichier `dossiers.json` à la racine du projet :
-
-```json
-{
-  "version": "1.0",
-  "current_dossier": "sarl-dupont",
-  "dossiers": [
-    {
-      "slug": "sarl-dupont",
-      "name": "SARL Dupont",
-      "token": "votre_token_dupont_ici",
-      "notes": "Client principal"
-    },
-    {
-      "slug": "sci-martin",
-      "name": "SCI Martin",
-      "token": "votre_token_martin_ici",
-      "notes": "SCI locative"
-    }
-  ]
-}
-```
-
-> ⚠️ **Ce fichier contient des tokens sensibles.** Il est automatiquement ignoré par Git (via `.gitignore`). Ne le partagez jamais. Exécutez `chmod 600 dossiers.json` pour le réserver à votre utilisateur (le serveur affiche un avertissement au démarrage si les permissions sont trop ouvertes).
-
-Vous pouvez aussi ajouter des dossiers dynamiquement via l'outil MCP `pennylane_add_dossier` sans éditer le fichier manuellement.
-
-#### Indirection par variable d'environnement (recommandé)
-
-Plutôt que d'écrire un token en clair, vous pouvez référencer une variable
-d'environnement avec la syntaxe `${VAR}` :
-
-```json
-{
-  "version": "1.0",
-  "current_dossier": "sarl-dupont",
-  "dossiers": [
-    {
-      "slug": "sarl-dupont",
-      "name": "SARL Dupont",
-      "token": "${PENNYLANE_TOKEN_SARL_DUPONT}",
-      "notes": "Client principal"
-    }
-  ]
-}
-```
-
-Exportez ensuite `PENNYLANE_TOKEN_SARL_DUPONT=...` dans l'environnement du
-serveur. Le token réel ne sera alors jamais écrit sur disque (`dossiers.json`
-ne contient que le placeholder `${VAR}`).
-
-### Mode 3 : Sans configuration initiale
-
-Le serveur peut démarrer sans token ni fichier de configuration. Il attendra l'ajout d'un dossier via l'outil MCP `pennylane_add_dossier`.
-
 ### Variables d'environnement
 
 | Variable | Requis | Description |
 |----------|--------|-------------|
-| `PENNYLANE_API_TOKEN` | Non* | Token Bearer (mode mono-dossier) |
-| `PENNYLANE_CONFIG_PATH` | Non | Chemin vers `dossiers.json` (défaut : `./dossiers.json`) |
-| `MCP_TRANSPORT` | Non | `stdio` (défaut) ou `sse` |
-| `MCP_HOST` / `MCP_PORT` | Non | Hôte/port d'écoute en mode SSE (défaut : `127.0.0.1:8000`) |
-| `MCP_AUTH_TOKEN` | **Oui en mode SSE** | Token Bearer requis pour authentifier les clients distants. Le serveur refuse de démarrer en SSE sans cette variable. |
-| `MCP_READONLY` | Non | `true`/`1`/`yes` : n'expose que les outils de consultation (`readOnlyHint: true`) — masque création/modification/suppression/envoi. |
-
-\* Requis uniquement si pas de `dossiers.json`.
+| `PENNYLANE_API_TOKEN` | **Oui** | Token Bearer Company API Pennylane |
+| `MCP_TRANSPORT` | Non | `stdio` (défaut, local) ou `sse` (distant) |
+| `MCP_HOST` / `MCP_PORT` | Non | Hôte/port d'écoute en mode SSE (défaut `127.0.0.1:8000`) |
+| `MCP_AUTH_TOKEN` | En SSE | Token d'authentification, **obligatoire** en mode SSE |
 
 ---
 
 ## Intégration avec Claude Desktop
 
 Ajoutez dans votre fichier de configuration Claude Desktop (`claude_desktop_config.json`) :
-
-### Mono-dossier
 
 ```json
 {
@@ -185,21 +114,6 @@ Ajoutez dans votre fichier de configuration Claude Desktop (`claude_desktop_conf
       "command": "pennylane-mcp-server",
       "env": {
         "PENNYLANE_API_TOKEN": "votre_token_pennylane"
-      }
-    }
-  }
-}
-```
-
-### Multi-dossiers
-
-```json
-{
-  "mcpServers": {
-    "pennylane": {
-      "command": "pennylane-mcp-server",
-      "env": {
-        "PENNYLANE_CONFIG_PATH": "/chemin/vers/votre/dossiers.json"
       }
     }
   }
@@ -217,27 +131,16 @@ Ajoutez dans votre fichier de configuration Claude Desktop (`claude_desktop_conf
 ### Lancement direct
 
 ```bash
-# Multi-dossiers (dossiers.json dans le répertoire courant)
-pennylane-mcp-server
-
-# Mono-dossier
+# Avec le token en variable d'environnement
 PENNYLANE_API_TOKEN=votre_token pennylane-mcp-server
 
 # Via Python directement
-python -m pennylane_mcp.server
+PENNYLANE_API_TOKEN=votre_token python -m pennylane_mcp.server
 ```
 
 ### Exemples de requêtes via LLM
 
 Une fois le serveur connecté à votre LLM, vous pouvez interagir en langage naturel :
-
-**Gestion des dossiers :**
-> « Liste-moi tous les dossiers configurés »
-> « Bascule sur le dossier SCI Martin »
-> « Ajoute le dossier EURL Bernard avec ce token : pl_xxx... »
-
-**Requête multi-dossiers :**
-> « Compare la balance générale de tous mes clients sur janvier 2025 »
 
 **Plan comptable :**
 > « Montre-moi tous les comptes clients (411) »
@@ -260,17 +163,6 @@ Une fois le serveur connecté à votre LLM, vous pouvez interagir en langage nat
 ---
 
 ## Fonctionnalités
-
-### Gestion multi-dossiers
-
-| Outil | Description |
-|-------|-------------|
-| `pennylane_list_dossiers` | Lister tous les dossiers configurés (tokens masqués) |
-| `pennylane_current_dossier` | Afficher le dossier actif + vérification connexion |
-| `pennylane_switch_dossier` | Basculer vers un autre dossier client |
-| `pennylane_add_dossier` | Ajouter un dossier (avec validation du token) |
-| `pennylane_remove_dossier` | Supprimer un dossier de la configuration |
-| `pennylane_multi_dossier_query` | Requête parallèle sur plusieurs dossiers |
 
 ### Plan comptable
 
@@ -387,9 +279,8 @@ pennylane-mcp-server/
     ├── server.py               # Point d'entrée FastMCP
     ├── constants.py            # URLs, limites, constantes
     ├── models.py               # Modèles Pydantic (validation stricte)
-    ├── api.py                  # Client httpx async (multi-dossier aware)
+    ├── api.py                  # Client httpx async + validation des endpoints
     ├── utils.py                # Formatage, pagination, troncature
-    ├── dossier_manager.py      # Gestionnaire multi-dossiers (singleton)
     │
     └── tools/                  # Outils MCP répartis par domaine
         ├── me.py               # Connexion
@@ -407,8 +298,7 @@ pennylane-mcp-server/
         ├── billing_subscriptions.py # Abonnements
         ├── categories.py       # Catégories analytiques
         ├── exports.py          # Exports FEC / AGL
-        ├── changelogs.py       # Journaux de modifications
-        └── dossiers.py         # Multi-dossiers
+        └── changelogs.py       # Journaux de modifications
 ```
 
 ---
@@ -444,16 +334,11 @@ mcp dev src/pennylane_mcp/server.py
 
 ## Sécurité
 
-- Les tokens API ne sont **jamais** inclus dans le code source
-- Le fichier `dossiers.json` est exclu du dépôt Git via `.gitignore`, et le serveur avertit au démarrage si ses permissions sont trop ouvertes (`chmod 600` recommandé)
-- Les tokens peuvent être stockés par indirection (`"token": "${MA_VARIABLE}"`) : le secret réel ne vit qu'en variable d'environnement, jamais sur disque
-- Les tokens sont masqués dans les retours de l'outil `list_dossiers`
+- Le token API n'est **jamais** inclus dans le code source (variable d'environnement uniquement)
+- Le fichier `.env` est exclu du dépôt Git via `.gitignore`
+- La seule destination réseau est l'API Pennylane : les endpoints sont validés (`api._validate_endpoint`) pour empêcher toute fuite du token vers un hôte tiers (URL absolue / protocole-relatif rejetés)
+- En mode SSE, un token d'authentification (`MCP_AUTH_TOKEN`) est **obligatoire** (comparaison à temps constant)
 - Toutes les entrées utilisateur sont validées par Pydantic v2 (`extra="forbid"`)
-- Tous les appels API valident l'endpoint (`_validate_endpoint`) : impossible de faire fuiter le token Bearer vers un hôte tiers via un endpoint absolu ou protocole-relatif (`https://...`, `//evil.com`)
-- En mode SSE, `MCP_AUTH_TOKEN` est **obligatoire** (le serveur refuse de démarrer sans), et la comparaison du Bearer est en temps constant (`hmac.compare_digest`)
-- `MCP_READONLY=true` active un mode lecture seule : seuls les outils `readOnlyHint: true` (list/get) sont exposés, masquant création/modification/suppression
-- Recommandé : générez des tokens Pennylane avec des scopes minimaux (lecture seule si possible) pour chaque dossier
-- Installation reproductible et figée : `pip install --require-hashes -r requirements.txt`
 
 ---
 
