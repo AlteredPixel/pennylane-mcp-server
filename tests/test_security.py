@@ -10,8 +10,6 @@ Couvre :
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from pennylane_mcp.api import _validate_endpoint
@@ -47,6 +45,7 @@ def test_validate_endpoint_rejects_unsafe(endpoint: str) -> None:
         "/ledger_accounts",
         "/customers/123",
         "/trial_balance",
+        "/redirect?url=https://example.com",
     ],
 )
 def test_validate_endpoint_accepts_relative_paths(endpoint: str) -> None:
@@ -69,6 +68,16 @@ def test_resolve_secret_missing_env_var_raises(monkeypatch: pytest.MonkeyPatch) 
 
 def test_resolve_secret_passes_through_literal_token() -> None:
     assert resolve_secret("pl_literal_token_abc123") == "pl_literal_token_abc123"
+
+
+def test_resolve_secret_resolves_dollar_var_without_braces(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PENNYLANE_TOKEN_TEST", "pl_real_secret_value")
+    assert resolve_secret("$PENNYLANE_TOKEN_TEST") == "pl_real_secret_value"
+
+
+@pytest.mark.parametrize("value", ["${PENNYLANE_TOKEN_TEST", "$PENNYLANE_TOKEN_TEST}"])
+def test_resolve_secret_rejects_malformed_braces(value: str) -> None:
+    assert resolve_secret(value) == value
 
 
 # ─── mask_token ────────────────────────────────────────────────────────────────
@@ -113,16 +122,13 @@ def test_check_sse_auth_rejects_mismatch(auth_header: str) -> None:
 def test_readonly_mode_skips_non_readonly_tools(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_READONLY", "true")
 
-    from mcp.server.fastmcp import FastMCP
-
+    import asyncio
     import importlib
     import pennylane_mcp.server as server_module
 
     importlib.reload(server_module)
     try:
         mcp = server_module.mcp
-
-        registered: list[str] = []
 
         @mcp.tool(
             name="test_read_only",
@@ -131,8 +137,6 @@ def test_readonly_mode_skips_non_readonly_tools(monkeypatch: pytest.MonkeyPatch)
         async def _read_only_tool() -> str:
             return "ok"
 
-        registered.append("test_read_only")
-
         @mcp.tool(
             name="test_write_tool",
             annotations={"readOnlyHint": False},
@@ -140,7 +144,7 @@ def test_readonly_mode_skips_non_readonly_tools(monkeypatch: pytest.MonkeyPatch)
         async def _write_tool() -> str:
             return "ok"
 
-        tool_names = {t.name for t in mcp._tool_manager.list_tools()}
+        tool_names = {t.name for t in asyncio.run(mcp.list_tools())}
         assert "test_read_only" in tool_names
         assert "test_write_tool" not in tool_names
     finally:

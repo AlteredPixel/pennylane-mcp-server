@@ -308,7 +308,7 @@ def main() -> None:
             async def __call__(self, scope, receive, send):
                 if scope["type"] == "http":
                     headers_dict = dict(scope.get("headers", []))
-                    auth_header = headers_dict.get(b"authorization", b"").decode()
+                    auth_header = headers_dict.get(b"authorization", b"").decode("latin-1", errors="replace")
                     if not _check_sse_auth(auth_header, f"Bearer {auth_token}"):
                         await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"text/plain")]})
                         await send({"type": "http.response.body", "body": b"Unauthorized"})

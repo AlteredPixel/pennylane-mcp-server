@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -43,10 +44,9 @@ def _validate_endpoint(endpoint: str) -> str:
         raise ValueError("Endpoint invalide : caractères de contrôle interdits.")
     if "\\" in endpoint:
         raise ValueError("Endpoint invalide : antislash interdit.")
-    if "://" in endpoint:
-        raise ValueError("Endpoint invalide : schéma d'URL interdit.")
-    if endpoint.startswith("//"):
-        raise ValueError("Endpoint invalide : URL protocole-relative interdite.")
+    parsed = urlsplit(endpoint)
+    if parsed.scheme or parsed.netloc:
+        raise ValueError("Endpoint invalide : schéma ou hôte interdit.")
     if not endpoint.startswith("/"):
         raise ValueError("Endpoint invalide : doit commencer par '/'.")
     return endpoint

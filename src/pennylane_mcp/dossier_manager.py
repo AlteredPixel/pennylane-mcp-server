@@ -68,7 +68,7 @@ def mask_token(token: str) -> str:
     return f"{token[:6]}…{token[-3:]}"
 
 
-_SECRET_REF_RE = re.compile(r"^\$\{?(\w+)\}?$")
+_SECRET_REF_RE = re.compile(r"^\$(?:(\w+)|\{(\w+)\})$")
 
 
 def resolve_secret(value: str) -> str:
@@ -85,7 +85,7 @@ def resolve_secret(value: str) -> str:
     if not match:
         return value
 
-    var_name = match.group(1)
+    var_name = match.group(1) or match.group(2)
     resolved = os.environ.get(var_name)
     if resolved is None:
         raise RuntimeError(
